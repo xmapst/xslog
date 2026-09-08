@@ -28,5 +28,32 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+.claude/
+.kilo/
+.codegraph/
+
+# Binary dir
+bin/
+
+# Build artifacts
+node_modules/
+
+# Claude Code
+CLAUDE.md
+
+# 对照数据与临时产物（不随仓库走）
+.temp/
+.test/
+*.pprof
+
+.dat
+# Build files
+bin
+# Dist files
+dist
+# Log files
+logs
+# Script files
+scripts
