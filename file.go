@@ -51,6 +51,7 @@ type fileOptions struct {
 	maxAgeDays    int
 	rotationHours int
 	compression   string
+	err           error
 }
 
 // newFileOptions 按顺序应用选项，后面的覆盖前面的；没被覆盖的留在默认值上。
@@ -75,6 +76,7 @@ func (f *FileOutput) newFileOptions(opts []FileOption) fileOptions {
 func WithMaxSizeMB(mb int) FileOption {
 	return func(o *fileOptions) {
 		if mb < 0 {
+			o.err = fmt.Errorf("xslog: max size MB must be non-negative: %d", mb)
 			return
 		}
 		o.maxSizeMB = mb
@@ -84,6 +86,10 @@ func WithMaxSizeMB(mb int) FileOption {
 // WithMaxBackups 设置最多保留多少个历史日志文件；不设即 [DefaultMaxBackups]。
 func WithMaxBackups(n int) FileOption {
 	return func(o *fileOptions) {
+		if n < 0 {
+			o.err = fmt.Errorf("xslog: max backups must be non-negative: %d", n)
+			return
+		}
 		o.maxBackups = n
 	}
 }
@@ -91,6 +97,10 @@ func WithMaxBackups(n int) FileOption {
 // WithMaxAgeDays 设置历史日志文件最长保留天数；不设即 [DefaultMaxAgeDays]。
 func WithMaxAgeDays(days int) FileOption {
 	return func(o *fileOptions) {
+		if days < 0 {
+			o.err = fmt.Errorf("xslog: max age days must be non-negative: %d", days)
+			return
+		}
 		o.maxAgeDays = days
 	}
 }
@@ -107,6 +117,7 @@ func WithMaxAgeDays(days int) FileOption {
 func WithRotationHours(hours int) FileOption {
 	return func(o *fileOptions) {
 		if hours < 0 {
+			o.err = fmt.Errorf("xslog: rotation hours must be non-negative: %d", hours)
 			return
 		}
 		o.rotationHours = hours
@@ -163,6 +174,12 @@ func OpenFile(path string, opts ...FileOption) (*FileOutput, error) {
 		return nil, errors.New("xslog: empty log file path")
 	}
 	o := f.newFileOptions(opts)
+	if o.err != nil {
+		return nil, o.err
+	}
+	if int64(o.rotationHours) > int64(^uint64(0)>>1)/int64(time.Hour) {
+		return nil, fmt.Errorf("xslog: rotation hours out of range: %d", o.rotationHours)
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve log path %q: %w", path, err)

@@ -101,9 +101,10 @@ import (
 type JSONHandler struct {
 	renderer
 
-	mu     *sync.Mutex
-	writer io.Writer
-	level  slog.Leveler
+	mu      *sync.Mutex
+	writer  io.Writer
+	level   slog.Leveler
+	onError ErrorHandler
 
 	// time 是 @time 成员与 time.Time 字段值共用的渲染设置，装配时由 [WithTimeLayout]
 	// 的取值解析出来；它同时决定这两处加不加引号。
@@ -150,14 +151,16 @@ type JSONHandler struct {
 func NewJSONHandler(opts ...Option) *JSONHandler {
 	o := newOptions(opts)
 	h := &JSONHandler{
-		mu:     &sync.Mutex{},
-		writer: o.output(),
-		level:  o.level,
-		time:   newTimeFormat(o.timeLayout),
-		sep:    ',',
+		mu:      &sync.Mutex{},
+		writer:  o.output(),
+		level:   o.level,
+		time:    newTimeFormat(o.timeLayout),
+		sep:     ',',
+		onError: o.errorHandler,
 	}
 	if o.jsonHeader != nil {
-		for _, f := range o.jsonHeader() {
+		fields := safeJSONHeader(o.jsonHeader)
+		for _, f := range fields {
 			h.header = append(h.header, ',')
 			h.header = h.appendJSONString(h.header, f.Key)
 			h.header = append(h.header, ':')
@@ -165,6 +168,15 @@ func NewJSONHandler(opts ...Option) *JSONHandler {
 		}
 	}
 	return h
+}
+
+func safeJSONHeader(fn JSONHeaderFunc) (fields []HeaderField) {
+	defer func() {
+		if v := recover(); v != nil {
+			fields = []HeaderField{{Key: "header_error", Value: fmt.Sprintf("<header panicked: %v>", v)}}
+		}
+	}()
+	return fn()
 }
 
 // Enabled 检查指定日志级别是否开启。
@@ -228,8 +240,11 @@ func (h *JSONHandler) Handle(_ context.Context, r slog.Record) error {
 	buf = append(buf, '}', '\n')
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	_, err := h.writer.Write(buf)
+	h.mu.Unlock()
+	if err != nil && h.onError != nil {
+		h.onError(err)
+	}
 	return err
 }
 
@@ -312,7 +327,7 @@ func (h *JSONHandler) appendSep(buf []byte, sep byte) []byte {
 // 分组字段展开为真正的嵌套 JSON 对象。
 func (h *JSONHandler) appendAttr(buf []byte, a slog.Attr, sep byte) ([]byte, byte) {
 	a.Value = a.Value.Resolve()
-	if a.Equal(slog.Attr{}) {
+	if a.Equal(slog.Attr{}) || (a.Key == "" && a.Value.Kind() != slog.KindGroup) {
 		return buf, sep
 	}
 	if a.Value.Kind() == slog.KindGroup {

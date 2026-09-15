@@ -115,15 +115,22 @@ type ConsoleHeaderFunc func(lv slog.Level, src string) []string
 // 落盘相关的选项是另一套类型，见 [FileOption]。
 type Option func(*options)
 
+// ErrorHandler receives errors returned while a Handler writes a record.
+// slog.Logger otherwise discards Handler errors, so this is useful for
+// detecting oversized records and broken output targets.
+type ErrorHandler func(error)
+
 // options 是选项应用后的结果。
 type options struct {
 	writer        io.Writer
+	hasFile       bool
 	filePath      string
 	fileOpts      []FileOption
 	level         slog.Leveler
 	format        string
 	jsonHeader    JSONHeaderFunc
 	consoleHeader ConsoleHeaderFunc
+	errorHandler  ErrorHandler
 	timeLayout    string
 }
 
@@ -152,6 +159,7 @@ func WithWriter(w io.Writer) Option {
 		// 与 [WithFile] 互为覆盖：两者说的都是「日志往哪去」，同时给了就按选项顺序
 		// 由后者作数，和这个包里其余选项的规矩一致。在这里把路径清掉，装配时也就
 		// 不必再为「既给了 Writer 又给了路径」单独定一条规则。
+		o.hasFile = false
 		o.filePath, o.fileOpts = "", nil
 		if w == nil {
 			o.writer = os.Stdout
@@ -184,6 +192,7 @@ func WithFile(path string, opts ...FileOption) Option {
 	return func(o *options) {
 		o.writer = nil
 		o.filePath, o.fileOpts = path, opts
+		o.hasFile = true
 	}
 }
 
@@ -264,6 +273,11 @@ func WithConsoleHeader(fn ConsoleHeaderFunc) Option {
 		}
 		o.consoleHeader = fn
 	}
+}
+
+// WithErrorHandler observes errors returned by the output Writer.
+func WithErrorHandler(fn ErrorHandler) Option {
+	return func(o *options) { o.errorHandler = fn }
 }
 
 // WithTimeLayout 设置时间的渲染格式（time 包的参考时间写法），

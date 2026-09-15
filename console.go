@@ -65,9 +65,10 @@ import (
 type ConsoleHandler struct {
 	renderer
 
-	mu     *sync.Mutex
-	writer io.Writer
-	level  slog.Leveler
+	mu      *sync.Mutex
+	writer  io.Writer
+	level   slog.Leveler
+	onError ErrorHandler
 
 	// time 是行首时间与 time.Time 字段值共用的渲染设置，装配时由 [WithTimeLayout]
 	// 的取值解析出来。
@@ -112,11 +113,12 @@ type consoleAttr struct {
 func NewConsoleHandler(opts ...Option) *ConsoleHandler {
 	o := newOptions(opts)
 	return &ConsoleHandler{
-		mu:     &sync.Mutex{},
-		writer: o.output(),
-		level:  o.level,
-		time:   newTimeFormat(o.timeLayout),
-		header: o.consoleHeader,
+		mu:      &sync.Mutex{},
+		writer:  o.output(),
+		level:   o.level,
+		time:    newTimeFormat(o.timeLayout),
+		header:  o.consoleHeader,
+		onError: o.errorHandler,
 	}
 }
 
@@ -250,8 +252,11 @@ func (h *ConsoleHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	_, err := h.writer.Write(buf)
+	h.mu.Unlock()
+	if err != nil && h.onError != nil {
+		h.onError(err)
+	}
 	return err
 }
 
@@ -295,7 +300,7 @@ func (h *ConsoleHandler) headerFields(r slog.Record) (fields []string) {
 // flatten 把一个 Attr 摊平进列表：分组递归展开成点分键名，空 Attr 与空组丢弃。
 func (h *ConsoleHandler) flatten(dst []consoleAttr, prefix string, a slog.Attr) []consoleAttr {
 	a.Value = a.Value.Resolve()
-	if a.Equal(slog.Attr{}) {
+	if a.Equal(slog.Attr{}) || (a.Key == "" && a.Value.Kind() != slog.KindGroup) {
 		return dst
 	}
 	key := a.Key

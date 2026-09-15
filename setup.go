@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -15,8 +16,8 @@ import (
 // 一个全局再挂一个文件句柄，要管的生命周期仍然只有一份。自己 New Handler 的那条路
 // 仍然一无所持，见 [OpenFile]。
 type manager struct {
-	// level 是动态日志级别。slog.LevelVar 自带并发安全，且被 Handler 按接口持有
-	// （接口里装的是这个指针），因此调级不需要重建 Handler。
+	mu sync.Mutex
+	// level is dynamic log level.
 	level *slog.LevelVar
 
 	// file 是当前这份日志文件；没走 [WithFile] 时为 nil。
@@ -78,6 +79,9 @@ func SetLevel(l slog.Level) { std.level.Set(l) }
 // 格式不认识时返回错误而不是回落到默认值：配错一个字就静静换一种格式，
 // 要等有人去看日志才发现。
 func (m *manager) setup(o options) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	switch strings.ToLower(strings.TrimSpace(o.format)) {
 	case "", FormatConsole, FormatJSON:
 	default:
@@ -87,7 +91,7 @@ func (m *manager) setup(o options) error {
 	// 的话，一个写错的路径会连上一份能用的日志一起弄没——而那份日志正是用来看
 	// 「为什么起不来」的。
 	var file *FileOutput
-	if strings.TrimSpace(o.filePath) != "" {
+	if o.hasFile {
 		var err error
 		if file, err = OpenFile(o.filePath, o.fileOpts...); err != nil {
 			return err
@@ -118,7 +122,11 @@ func (m *manager) swapFile(next *FileOutput) error {
 }
 
 // close 关掉当前这份日志文件，并把它从 manager 上摘掉，因此重复调用是空操作。
-func (m *manager) close() error { return m.swapFile(nil) }
+func (m *manager) close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.swapFile(nil)
+}
 
 // newHandler 按格式挑一个 Handler。format 已由调用方校验过，留空即控制台。
 func (m *manager) newHandler(o options) slog.Handler {
@@ -133,6 +141,7 @@ func (m *manager) newHandler(o options) slog.Handler {
 		WithTimeLayout(o.timeLayout),
 		WithJSONHeader(o.jsonHeader),
 		WithConsoleHeader(o.consoleHeader),
+		WithErrorHandler(o.errorHandler),
 	}
 	if strings.EqualFold(strings.TrimSpace(o.format), FormatJSON) {
 		return NewJSONHandler(opts...)
