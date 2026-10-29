@@ -1,61 +1,44 @@
-// Package xslog 基于 Go 标准库 log/slog 提供项目统一的日志 Handler，
-// 让全仓库直接使用 log/slog 包级函数（slog.Debug/Info/Warn/Error）写日志，
-// 不再需要任何自定义 Logger 包装层。
+// Package xslog 基于 [log/slog] 提供由模板控制文本或 JSON 输出的 Handler。
+// [NewHandler] 和 [Setup] 默认使用 [DefaultTemplate]，可通过 [WithTemplate] 设置模板。
+// 空模板恢复默认值。
 //
-// 装配有两条路，分界在「谁来管生命周期」：
+// 创建使用文本模板的 Logger：
 //
-//	if err := xslog.Setup(xslog.WithFormat(xslog.FormatJSON),
-//		xslog.WithFile("/var/log/game.log"), xslog.WithLevel(lv)); err != nil {
-//		return err
-//	}
-//	defer xslog.Close()
+//	slog.SetDefault(slog.New(xslog.NewHandler(xslog.WithTemplate(
+//	    "${Time:15:04:05.000} [${Level:u3}] ${Message:l}",
+//	))))
 //
-// [Setup] 换掉进程的默认 Logger，格式、级别、去向都从配置来——服务启动时要的
-// 通常就是这一句。它也是这个包唯一存东西的地方，一共两样：一个动态级别，
-// 运行期用 [SetLevel] 调；一份日志文件，退出前用 [Close] 关。
+// 模板支持 %VAR% 和 ${VAR} 两种占位符；${Name[,alignment][:format]} 还支持对齐和格式。
+// 配置时以带类型的示例值展开模板，结果是合法 JSON 对象时采用 JSON 编码，否则采用文本编码。
+// 选定的编码不随记录或环境变量变化。JSON 占位符表示完整值，通常无需额外加引号：
 //
-//	slog.SetDefault(slog.New(xslog.NewConsoleHandler(xslog.WithWriter(w))))
+//	xslog.NewHandler(xslog.WithTemplate(
+//	    `{"time":${Time:unixMilli},"message":${Message}}`,
+//	))
 //
-// 直接 New 则一无所持：Handler 只管把记录渲染成字节，写到哪、什么时候关都在外面。
-// 一个进程里要同时留几份去向不同的日志（比如审计单独落一份），走的是这条——
-// 那里没有「进程唯一」可言，也就没有谁有资格替调用方持有那个文件。
+// 时间格式写在对应占位符中，可用 Go 时间布局或区分大小写的 unix、unixMilli、unixMicro、unixNano。
+// 调用信息通过 Source、File、FileName、Line、Function、Package 读取，并按程序计数器缓存。
+// File 保留运行时文件路径，Source 使用缩短的目录/文件名:行号。
+// PID、Hostname、Executable 在创建 Handler 时读取，派生 Handler 复用同一份快照。
+// Line 和 PID 的元数据在 JSON 中为数字，环境变量回退值按字符串处理。
 //
-// 包里有两个 Handler，渲染的是同一份记录，取舍相反：
+// 内置占位符名称不区分大小写；元数据缺失时，按占位符原名回退系统环境变量。
+// 空环境变量算作存在，两处均缺失时，文本省略占位值，JSON 省略对应成员或数组元素。
+// 占位符不查找业务属性，业务属性通过 Logger 的 With、WithGroup 及日志调用参数传入。
+// 文本字段使用 key=value，普通单行字符串带引号，分组展开为点分键名，多行字段写为对齐的竖线块。
+// JSON 字段保留对象嵌套；直接传入的字符串去掉末尾 CR/LF 后仍有多行内容时，按行展开为字符串数组。
+// 业务字段及普通环境变量中的完整 JSON 对象或数组文本优先作为结构化值编码。
+// 复合值使用自身的 JSON 序列化规则，内部字符串不递归展开为数组。
 //
-//   - [ConsoleHandler]：一条记录一行，消息与字段都以 k="v" 跟在行首之后，
-//     只有含换行的值才另起竖线块。只服务于「一个人正盯着控制台」：数字与布尔不加引号、
-//     分组压成点分键名。它不保证可解析，也不上色。
-//   - [JSONHandler]：一条记录一个 JSON 对象，机器能无歧义读回来。落文件、
-//     交给采集器、用 jq 查，走它。
+// [Handler] 管理属性、动态级别和并发写入；完整渲染后在派生实例共享的锁下调用一次 Writer。
+// 记录末尾缺少 LF 时自动补齐换行。NewLine 占位符可显式插入 LF，控制文本布局或 JSON 空白。
 //
-// 两者是各自独立的构造函数，选哪个就 New 哪个。按配置切格式是 [Setup] 那条路的事
-// （[WithFormat]），它顺带把「配置里的格式拼错了」变成启动时的一个错误返回值，
-// 而不是静静换一种格式、等有人去看日志才发现。
+// [Setup] 安装全局默认 Logger，可通过 [WithFile] 管理轮转文件，通过 [SetLevel] 动态调级。
+// 文件配置或打开失败时保留当前 Logger，[Close] 释放 Setup 持有的文件。
+// 独立创建的 Handler 使用调用方提供的 Writer 和 Leveler；[OpenFile] 可供调用方自行管理文件生命周期。
 //
-// 头行的自定义也因此分成两套，互不相干：JSON 那份要的是稳定的键值对
-// （[WithJSONHeader]，装配时算一次），控制台那份要的是一段排好序的文本
-// （[WithConsoleHeader]，逐条算，级别与位置作为参数交给调用方排）。
-// 两种格式对「头」的要求本来就不是同一件事，共用一个类型只会让两边都别扭。
-//
-// # 两者共有的安全性质
-//
-// 日志里有玩家可控的文本——客户端上行帧、上行脚本的正文、远端返回的错误消息。
-// 这类值一旦原样进终端就有两种坏事：ANSI 与八位形式的控制序列能清屏改色，
-// 双向覆写符能让一段文本倒着显示、伪装成别的内容，零宽字符能把东西藏起来。
-//
-// 所以两个 Handler 都把不可打印字符转义成 \uXXXX，判定按 unicode.IsPrint 取反，
-// 而不是枚举已知的坏字符——那样每冒出一个新的控制符类别就会漏一次。
-//
-// 多行值展开出来的每一行也都带缩进（JSON 那份是制表符，控制台那份是竖线块），
-// 顶格的行因此恒为一条记录的开头：值里被塞进换行，伪造不出一条以假时间戳打头的记录。
-//
-// # 文件与轮转
-//
-// 两条路各有各的写法。走 [Setup] 就用 [WithFile] 给个路径，文件由它打开、由 [Close]
-// 关闭；自己 New Handler 则用 [OpenFile] 开一个 Writer 再 [WithWriter] 传进去，
-// 谁开的谁关。轮转参数（大小、份数、天数、压缩）两边同一套 [FileOption]。
-//
-// 忘了 Close 不会丢日志：底下的轮转器不攒缓冲，每条记录当场就落到文件上，
-// 关闭之后仍在写的那些也是开-写-关地照写一遍。漏掉的是句柄和轮转的收尾，
-// 不是内容——所以这条 defer 摆在哪、和别的清理谁先谁后，都不必特别小心。
+// 编码器转义不可打印字符。属性值无法序列化、存在分组循环、超出解析限制，
+// 或其文本、序列化方法发生可恢复的 panic 时，使用诊断文本保留记录的其他字段。
+// 渲染或写入错误由 Handle 返回，也可通过 [WithErrorHandler] 观察；渲染失败时不写出记录。
+// Writer 短写返回 io.ErrShortWrite。Writer 和错误回调的 panic 向调用方传播，写入锁仍会释放。
 package xslog

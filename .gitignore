@@ -1,59 +1,34 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Go 二进制与插件
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# 覆盖率与性能分析产物
 *.out
 coverage.*
 *.coverprofile
 profile.cov
+*.pprof
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# 本地 Go 工作区与环境变量
 go.work
 go.work.sum
-
-# env file
 .env
 
-# Editor/IDE
+# 编辑器与本地工具配置
 .idea/
 .vscode/
 .claude/
 .kilo/
 .codegraph/
-
-# Binary dir
-bin/
-
-# Build artifacts
-node_modules/
-
-# Claude Code
 CLAUDE.md
 
-# 对照数据与临时产物（不随仓库走）
-.temp/
-.test/
-*.pprof
-
-.dat
-# Build files
-bin
-# Dist files
-dist
-# Log files
-logs
-# Script files
-scripts
+# 本地构建、日志与临时目录
+/bin/
+/dist/
+/logs/
+/.temp/
+/.test/
