@@ -67,7 +67,7 @@ func TestSourceRendering(t *testing.T) {
 	frame, _ := runtime.CallersFrames(pcs[:]).Next()
 	want := sourceInfo{
 		location: testSourceLocation(frame.File, frame.Line), file: frame.File, fileName: "renderer_test.go",
-		line: frame.Line, function: frame.Function, pkg: "github.com/xmapst/xslog",
+		line: frame.Line, function: "TestSourceRendering", pkg: "github.com/xmapst/xslog",
 	}
 	for range 2 {
 		if got := rd.source(pcs[0]); got != want {
@@ -76,20 +76,23 @@ func TestSourceRendering(t *testing.T) {
 	}
 }
 
-func TestSourcePackagePath(t *testing.T) {
-	for _, tc := range []struct{ function, want string }{
-		{"main.main", "main"},
-		{"net/http.(*Server).Serve", "net/http"},
-		{"github.com/example/pkg.Func.func1", "github.com/example/pkg"},
-		{"github.com/example/pkg.(*Type[...]).Method", "github.com/example/pkg"},
-		{"github.com/example/pkg.Func[example.com/types.Value].func1", "github.com/example/pkg"},
-		{"gopkg.in/yaml%2ev3.(*Decoder).Decode", "gopkg.in/yaml.v3"},
-		{"example.com/pkg%25name.Func", "example.com/pkg%name"},
-		{"example.com/bad%zz.Func", "example.com/bad%zz"},
-		{"", ""}, {"unknown", ""},
+func TestSourceFunctionInfo(t *testing.T) {
+	for _, tc := range []struct{ function, pkg, name string }{
+		{"main.main", "main", "main"},
+		{"net/http.(*Server).Serve", "net/http", "(*Server).Serve"},
+		{"github.com/example/pkg.Func.func1", "github.com/example/pkg", "Func.func1"},
+		{"github.com/example/pkg.(*Type[...]).Method", "github.com/example/pkg", "(*Type[...]).Method"},
+		{"github.com/example/pkg.Func[example.com/types.Value].func1", "github.com/example/pkg", "Func[example.com/types.Value].func1"},
+		{"gopkg.in/yaml%2ev3.(*Decoder).Decode", "gopkg.in/yaml.v3", "(*Decoder).Decode"},
+		{"example.com/pkg%25name.Func", "example.com/pkg%name", "Func"},
+		{"example.com/bad%zz.Func", "example.com/bad%zz", "Func"},
+		{"", "", ""}, {"unknown", "", "unknown"},
 	} {
-		if got := (renderer{}).packagePath(tc.function); got != tc.want {
-			t.Fatalf("packagePath(%q) = %q, want %q", tc.function, got, tc.want)
+		if got := (renderer{}).packagePath(tc.function); got != tc.pkg {
+			t.Fatalf("packagePath(%q) = %q, want %q", tc.function, got, tc.pkg)
+		}
+		if got := (renderer{}).functionName(tc.function); got != tc.name {
+			t.Fatalf("functionName(%q) = %q, want %q", tc.function, got, tc.name)
 		}
 	}
 }

@@ -24,7 +24,7 @@ func TestTemplateCallerMetadata(t *testing.T) {
 		t.Setenv(name, "environment-"+name)
 	}
 	want := fmt.Sprintf("%s|%s|%s|%d|%s|github.com/xmapst/xslog\n",
-		testSourceLocation(frame.File, frame.Line), frame.File, filepath.Base(frame.File), frame.Line, frame.Function)
+		testSourceLocation(frame.File, frame.Line), frame.File, filepath.Base(frame.File), frame.Line, "TestTemplateCallerMetadata")
 	for _, template := range []string{
 		"${Source}|${File}|${FileName}|${Line}|${Function}|${Package}",
 		"%Source%|%File%|%FileName%|%Line%|%Function%|%Package%",
@@ -42,7 +42,7 @@ func TestTemplateCallerMetadata(t *testing.T) {
 	wantJSON, err := json.Marshal(map[string]any{
 		"source": testSourceLocation(frame.File, frame.Line), "file": frame.File,
 		"fileName": filepath.Base(frame.File), "line": frame.Line, "quotedLine": fmt.Sprint(frame.Line),
-		"function": frame.Function, "package": "github.com/xmapst/xslog", "File": "business-file", "Line": -1,
+		"function": "TestTemplateCallerMetadata", "package": "github.com/xmapst/xslog", "File": "business-file", "Line": -1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -191,9 +191,9 @@ func TestTemplateMissingQuotedNumericValues(t *testing.T) {
 func TestHandlerCallerMetadataPointsToCaller(t *testing.T) {
 	var out bytes.Buffer
 	logger := slog.New(NewHandler(WithWriter(&out), WithTemplate("${File}|${FileName}|${Line}|${Function}|${Package}")))
-	pc, file, line, _ := runtime.Caller(0)
+	_, file, line, _ := runtime.Caller(0)
 	logger.Info("caller")
-	want := fmt.Sprintf("%s|%s|%d|%s|github.com/xmapst/xslog\n", file, filepath.Base(file), line+1, runtime.FuncForPC(pc).Name())
+	want := fmt.Sprintf("%s|%s|%d|TestHandlerCallerMetadataPointsToCaller|github.com/xmapst/xslog\n", file, filepath.Base(file), line+1)
 	if out.String() != want {
 		t.Fatalf("slog caller = %q, want %q", out.String(), want)
 	}

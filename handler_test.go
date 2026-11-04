@@ -332,7 +332,7 @@ func TestHandlerConcurrentChildrenWriteWholeRecords(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &record); err != nil || record.Message != "hello" || record.App != "gate" || record.Worker.ID < 0 || record.Worker.ID >= workers {
 			t.Fatalf("invalid concurrent record %q: %v", line, err)
 		}
-		if record.File != frame.File || record.FileName != "handler_test.go" || record.Line != frame.Line || record.Function != frame.Function || record.Package != "github.com/xmapst/xslog" || record.PID != os.Getpid() {
+		if record.File != frame.File || record.FileName != "handler_test.go" || record.Line != frame.Line || record.Function != "TestHandlerConcurrentChildrenWriteWholeRecords" || record.Package != "github.com/xmapst/xslog" || record.PID != os.Getpid() {
 			t.Fatalf("invalid concurrent metadata: %s", line)
 		}
 		counts[record.Worker.ID]++

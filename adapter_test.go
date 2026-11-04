@@ -138,7 +138,7 @@ func TestAdapterSourcePointsToCaller(t *testing.T) {
 		var out bytes.Buffer
 		a := NewAdapter(slog.New(NewHandler(WithWriter(&out), WithTemplate("${Source}|${File}|${FileName}|${Line}|${Function}|${Package}"))))
 		frame := call(a)
-		want := fmt.Sprintf("%s|%s|%s|%d|%s|github.com/xmapst/xslog\n", testSourceLocation(frame.File, frame.Line), frame.File, filepath.Base(frame.File), frame.Line, frame.Function)
+		want := fmt.Sprintf("%s|%s|%s|%d|%s|github.com/xmapst/xslog\n", testSourceLocation(frame.File, frame.Line), frame.File, filepath.Base(frame.File), frame.Line, strings.TrimPrefix(frame.Function, "github.com/xmapst/xslog."))
 		if out.String() != want {
 			t.Fatalf("source = %q, want %q", out.String(), want)
 		}

@@ -115,14 +115,16 @@ func (rd renderer) source(pc uintptr) sourceInfo {
 	return loc
 }
 
-// renderSource 解析程序计数器，保留完整文件和函数信息，并生成缩短位置。
+// renderSource 解析程序计数器，提取文件、函数名和包路径，并生成缩短位置。
 // 缓存由 source 管理。
 // 首次并发查询同一位置时可能重复解析。
 func (rd renderer) renderSource(pc uintptr) sourceInfo {
 	frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
 	info := sourceInfo{
-		file: frame.File, line: frame.Line, function: frame.Function,
-		pkg: rd.packagePath(frame.Function),
+		file:     frame.File,
+		line:     frame.Line,
+		function: rd.functionName(frame.Function),
+		pkg:      rd.packagePath(frame.Function),
 	}
 	if frame.File != "" {
 		info.fileName = filepath.Base(frame.File)
@@ -134,6 +136,17 @@ func (rd renderer) renderSource(pc uintptr) sourceInfo {
 		info.location = path + ":" + strconv.Itoa(frame.Line)
 	}
 	return info
+}
+
+// functionName 去掉运行时符号的包路径，保留接收者、泛型参数和闭包后缀。
+func (rd renderer) functionName(function string) string {
+	prefix, _, _ := strings.Cut(function, "[")
+	start := strings.LastIndexByte(prefix, '/') + 1
+	dot := strings.IndexByte(prefix[start:], '.')
+	if dot < 0 {
+		return function
+	}
+	return function[start+dot+1:]
 }
 
 // packagePath 按运行时符号规则提取包路径，忽略泛型参数并还原路径转义。
