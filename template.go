@@ -47,15 +47,24 @@ type layout interface {
 //
 // 空模板使用 [DefaultTemplate]。JSON 模式下，实际生成的对象若无效，Handle 返回错误，
 // 不写出该记录，并通过 [WithErrorHandler] 报告错误。
+//
+// 运行时替换已创建 Handler 的模板使用 [Handler.SetTemplate]。
 func WithTemplate(template string) Option {
+	compiled := newTemplate(template)
+	return func(o *options) {
+		o.layout = compiled
+	}
+}
+
+// newTemplate 编译输出模板，空模板使用 [DefaultTemplate]。
+// 返回的模板编译完成后只读，可由多个 Handler 并发共享。
+func newTemplate(template string) *outputTemplate {
 	if template == "" {
 		template = DefaultTemplate
 	}
 	compiled := new(outputTemplate)
 	compiled.compile(template)
-	return func(o *options) {
-		o.layout = compiled
-	}
+	return compiled
 }
 
 // outputTemplate 保存编译后的占位符和输出编码，编译完成后只读。

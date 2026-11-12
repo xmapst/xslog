@@ -47,3 +47,30 @@ func ExampleWithTemplate_multiline() {
 	// 	"frame1",
 	// 	"frame2"]}
 }
+
+func ExampleHandler_SetLevel() {
+	h := xslog.NewHandler(
+		xslog.WithWriter(os.Stdout),
+		xslog.WithTemplate("${Message:l}"),
+		xslog.WithLevel(slog.LevelWarn),
+	)
+	logger := slog.New(h)
+	logger.Info("dropped")
+	h.SetLevel(slog.LevelDebug)
+	logger.Debug("kept")
+	// Output: kept
+}
+
+func ExampleHandler_SetTemplate() {
+	h := xslog.NewHandler(
+		xslog.WithWriter(os.Stdout),
+		xslog.WithTemplate("[${Level:u3}] ${Message:l}"),
+	)
+	logger := slog.New(h).With("app", "gate") // 先派生 Logger，再切换模板。
+	logger.Info("text")
+	h.SetTemplate(`{"severity":${Level:u3},"message":${Message}}`)
+	logger.Info("json")
+	// Output:
+	// [INF] text app="gate"
+	// {"severity":"INF","message":"json","app":"gate"}
+}

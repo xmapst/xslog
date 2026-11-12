@@ -67,17 +67,31 @@ func unsetTestEnv(t *testing.T, name string) {
 	}
 }
 
+// preserveDefaultLogger 保存默认 Logger 和全局 Handler 的设置，测试结束后恢复。
+// Setup 和包级的 Set 函数原地更新全局 Handler，必须整体恢复，避免影响后续测试。
 func preserveDefaultLogger(t *testing.T) {
 	t.Helper()
-	previous, level := slog.Default(), std.level.Level()
+	previous, settings := slog.Default(), std.handler.state.settings()
 	t.Cleanup(func() {
 		if err := Close(); err != nil {
 			t.Errorf("close test log file: %v", err)
 		}
-		SetLevel(level)
+		std.handler.state.configure(settings)
 		slog.SetDefault(previous)
 	})
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// settings 返回当前设置的快照，供测试保存和恢复。
+func (s *handlerState) settings() handlerSettings {
+	s.mu.Lock()
+	writer := s.writer
+	s.mu.Unlock()
+	v := handlerSettings{writer: writer, level: *s.level.Load(), layout: *s.layout.Load()}
+	if fn := s.onError.Load(); fn != nil {
+		v.onError = *fn
+	}
+	return v
 }
 
 type testWriter struct {

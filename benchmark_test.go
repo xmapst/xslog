@@ -63,7 +63,7 @@ func (tc benchmarkCase) handler(b *testing.B) (*Handler, slog.Record) {
 		b.Fatal(err)
 	}
 	b.SetBytes(int64(sample.Len()))
-	h.writer = io.Discard
+	h.SetWriter(io.Discard)
 	return h, r
 }
 
@@ -119,7 +119,7 @@ func BenchmarkLogger(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			h := NewHandler(WithWriter(io.Discard), WithTemplate(tc.template))
 			if tc.name == "Filtered" {
-				h.level = slog.LevelError
+				h.SetLevel(slog.LevelError)
 			}
 			logger := slog.New(h)
 			attrs := []slog.Attr{slog.String("request", "req-123"), slog.Int("status", 200), slog.Bool("ok", true)}
@@ -186,7 +186,7 @@ func BenchmarkFileOutput(b *testing.B) {
 				}
 			})
 			h, r := tc.handler(b)
-			h.writer = file
+			h.SetWriter(file)
 			b.ReportAllocs()
 			for b.Loop() {
 				if err := h.Handle(context.Background(), r); err != nil {

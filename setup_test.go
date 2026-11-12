@@ -38,7 +38,9 @@ func TestSetupUsesDefaultTemplate(t *testing.T) {
 	}
 }
 
-func TestSetupUsesSharedDynamicLevel(t *testing.T) {
+// Setup 只读取传入 Leveler 的初始级别，之后由 SetLevel 调整。
+// 重复 Setup 原地更新全局 Handler：此前派生的 Logger 随之使用新的 Writer、模板和级别。
+func TestSetupReconfiguresGlobalHandler(t *testing.T) {
 	preserveDefaultLogger(t)
 	var first, second bytes.Buffer
 	var supplied slog.LevelVar
@@ -47,7 +49,8 @@ func TestSetupUsesSharedDynamicLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := slog.Default()
-	supplied.Set(slog.LevelDebug)
+	derived := slog.With("module", "gate")
+	supplied.Set(slog.LevelDebug) // Setup 不跟随传入的 LevelVar。
 	slog.Info("filtered")
 	slog.Warn("warn")
 	SetLevel(slog.LevelDebug)
@@ -55,18 +58,53 @@ func TestSetupUsesSharedDynamicLevel(t *testing.T) {
 	if first.String() != "warn\ndebug\n" {
 		t.Fatal(first.String())
 	}
-	if err := Setup(WithWriter(&second), WithLevel(slog.LevelError), WithTemplate("${Message:l}")); err != nil {
+	if err := Setup(WithWriter(&second), WithLevel(slog.LevelError), WithTemplate("${Message:l}!")); err != nil {
 		t.Fatal(err)
 	}
 	old.Warn("old filtered")
+	derived.Error("derived")
 	slog.Error("error")
-	if first.String() != "warn\ndebug\n" || second.String() != "error\n" {
+	if first.String() != "warn\ndebug\n" || second.String() != "derived! module=\"gate\"\nerror!\n" {
 		t.Fatalf("first=%q, second=%q", first.String(), second.String())
 	}
 	SetLevel(slog.LevelDebug)
 	old.Debug("old debug")
-	if !strings.HasSuffix(first.String(), "old debug\n") {
-		t.Fatal("previous global handlers do not share SetLevel")
+	if !strings.HasSuffix(second.String(), "old debug!\n") {
+		t.Fatal("previous Loggers do not follow SetLevel")
+	}
+}
+
+// 包级的 Set 函数作用于全局 Handler：已经派生的 Logger 随之变化。
+func TestPackageSettersApplyToGlobalHandler(t *testing.T) {
+	preserveDefaultLogger(t)
+	var first, second bytes.Buffer
+	if err := Setup(WithWriter(&first), WithLevel(slog.LevelWarn), WithTemplate("${Message:l}")); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.With("app", "gate")
+	log.Info("dropped")
+	SetLevel(slog.LevelInfo)
+	log.Info("one")
+	SetTemplate(`{"message":${Message}}`)
+	log.Info("two")
+	SetWriter(&second)
+	log.Info("three")
+	if want := "one app=\"gate\"\n{\"message\":\"two\",\"app\":\"gate\"}\n"; first.String() != want {
+		t.Fatalf("first = %q, want %q", first.String(), want)
+	}
+	if want := "{\"message\":\"three\",\"app\":\"gate\"}\n"; second.String() != want {
+		t.Fatalf("second = %q, want %q", second.String(), want)
+	}
+
+	failure := errors.New("write failed")
+	var reported []error
+	SetWriter(writeFunc(func([]byte) (int, error) { return 0, failure }))
+	SetErrorHandler(func(err error) { reported = append(reported, err) })
+	log.Info("four")
+	SetErrorHandler(nil)
+	log.Info("five")
+	if len(reported) != 1 || !errors.Is(reported[0], failure) {
+		t.Fatalf("reported errors = %v, want one %v", reported, failure)
 	}
 }
 
@@ -176,7 +214,7 @@ func TestManagerClosesPreviousFileAndReportsCloseErrors(t *testing.T) {
 	preserveDefaultLogger(t)
 	for _, closeErr := range []error{nil, errors.New("close failed")} {
 		old := &trackedWriteCloser{err: closeErr}
-		m := &manager{level: new(slog.LevelVar)}
+		m := &manager{handler: NewHandler()}
 		m.file.Store(&FileOutput{WriteCloser: old})
 		var out bytes.Buffer
 		if err := m.setup((options{}).apply([]Option{WithWriter(&out), WithTemplate("${Message:l}")})); err != nil {

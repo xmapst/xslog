@@ -57,8 +57,8 @@ func TestDefaultOutputUsesTemplateRendering(t *testing.T) {
 	for _, opts := range [][]Option{nil, {WithTemplate("")}, {WithTemplate(DefaultTemplate)}, {WithTemplate("${Message:l}"), WithTemplate("")}} {
 		var out testWriter
 		h := NewHandler(append(opts, WithWriter(&out))...)
-		if compiled, ok := h.layout.(*outputTemplate); !ok || compiled.json {
-			t.Fatalf("default renderer = %#v, want a text outputTemplate", h.layout)
+		if compiled, ok := h.currentLayout().(*outputTemplate); !ok || compiled.json {
+			t.Fatalf("default renderer = %#v, want a text outputTemplate", h.currentLayout())
 		}
 		if err := h.Handle(context.Background(), r); err != nil || out.String() != want || out.writes != 1 {
 			t.Fatalf("default output = %q, error = %v, writes = %d; want %q", out.String(), err, out.writes, want)

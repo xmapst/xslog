@@ -227,7 +227,7 @@ lv.Set(slog.LevelWarn)
 未设置级别或传入 `WithLevel(nil)` 时使用 `slog.LevelDebug`。
 `WithLevel` 也接受固定的 `slog.Level`；`slog.LevelVar` 自身的零值为 Info。
 
-`Setup` 则替换进程的默认 Logger，并管理由 `WithFile` 打开的文件：
+`Setup` 则配置进程的全局 Handler 并安装为默认 Logger，同时管理由 `WithFile` 打开的文件：
 
 ```go
 if err := xslog.Setup(
@@ -241,9 +241,9 @@ defer xslog.Close()
 xslog.SetLevel(slog.LevelDebug)
 ```
 
-`WithLevel` 在这里确定初始阈值，后续用 `SetLevel` 修改包内的共享级别。
-重复 `Setup` 会先安装新 Logger，再关闭旧文件；`Close` 可重复调用。
-文件参数校验或打开失败时，`Setup` 返回错误，现有 Logger 保持有效。
+`WithLevel` 在这里确定初始阈值，后续用 `SetLevel` 修改全局 Handler 的级别。
+重复 `Setup` 会先切换到新配置，再关闭旧文件；`Close` 可重复调用。
+文件参数校验或打开失败时，`Setup` 返回错误，现有配置保持不变。
 
 自行管理轮转文件时，使用 `OpenFile`：
 
@@ -258,6 +258,43 @@ log := slog.New(xslog.NewHandler(xslog.WithWriter(w)))
 
 `WithWriter` 与 `WithFile` 按选项顺序互相覆盖。`OpenFile` 提前试开文件，避免路径或权限
 错误直到第一次写入才暴露。大小和时间触发轮转，历史文件清理按保留批次和天数执行。
+
+## 运行时调整
+
+模板、级别、Writer 和错误回调都可以在运行时调整，不必重建 Logger。
+`Handler` 的方法对该 Handler 及其 `With`、`WithGroup` 派生的实例立即生效：
+
+```go
+h := xslog.NewHandler(xslog.WithLevel(slog.LevelInfo))
+log := slog.New(h).With("module", "gate")
+
+h.SetLevel(slog.LevelDebug)
+h.SetTemplate(`{"time":${Time:unixMilli},"message":${Message}}`) // 文本与 JSON 可以互相切换
+h.SetWriter(w)                                                    // nil 表示标准输出
+h.SetErrorHandler(func(err error) { /* 记录或统计输出失败 */ })   // nil 表示不再通知
+```
+
+`Setup` 管理的全局 Handler 有对应的包级函数，作用于经 `slog.Default()` 派生的全部 Logger，
+包括 `Setup` 之前派生的：
+
+```go
+xslog.SetLevel(slog.LevelWarn)
+xslog.SetTemplate("${Time:15:04:05} ${Message:l}")
+xslog.SetWriter(os.Stderr)
+xslog.SetErrorHandler(nil)
+```
+
+语义如下：
+
+- `SetTemplate` 的语法与 `WithTemplate` 相同，空模板恢复 `DefaultTemplate`。每条记录只读取一次模板，
+  不会混用新旧模板；调用时已在渲染的记录仍使用旧模板。
+- `SetLevel` 遇到经 `WithLevel` 传入的 `*slog.LevelVar` 时更新该变量，共享它的 Handler 同步变化；
+  其他情况以固定级别取代原 Leveler。
+- `SetWriter` 与写入互斥，返回后旧 Writer 不会再被调用，可以安全关闭；Handler 不会替调用方关闭它。
+  `Setup` 通过 `WithFile` 打开的文件仍由 `Close` 关闭。
+- 错误回调在写锁之外执行，可以在回调里调用上述任何方法；回调本身需要支持并发。
+- 这些方法可并发调用。`Setup` 一次更新多项设置时逐项生效，此间并发的记录可能混用新旧设置，
+  但每条记录都是完整的。
 
 ## 输入编码与错误
 

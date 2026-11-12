@@ -81,8 +81,8 @@ func WithFile(path string, opts ...FileOption) Option {
 }
 
 // WithLevel 设置级别阈值，未指定或传入 nil 时使用 [slog.LevelDebug]。
-// [NewHandler] 保留传入的 Leveler，可通过共享的 [slog.LevelVar] 动态调级。
-// [Setup] 只读取初始级别，后续通过 [SetLevel] 调整包内的共享级别。
+// [NewHandler] 保留传入的 Leveler，可通过共享的 [slog.LevelVar] 或 [Handler.SetLevel] 动态调级。
+// [Setup] 只读取初始级别，后续通过 [SetLevel] 调整全局 Handler 的级别。
 //
 // slog.LevelVar 的零值是 Info，传入前应按需要设置初始级别。
 func WithLevel(l slog.Leveler) Option {
@@ -139,7 +139,7 @@ var (
 	_ slog.Handler = (*Handler)(nil)
 
 	// std 是进程唯一的日志管理器。
-	std = &manager{level: new(slog.LevelVar)}
+	std = new(manager)
 )
 
 // attrPool 复用摊平后的文本字段切片。

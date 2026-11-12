@@ -30,11 +30,15 @@
 // 业务字段及普通环境变量中的完整 JSON 对象或数组文本优先作为结构化值编码。
 // 复合值使用自身的 JSON 序列化规则，内部字符串不递归展开为数组。
 //
-// [Handler] 管理属性、动态级别和并发写入；完整渲染后在派生实例共享的锁下调用一次 Writer。
+// [Handler] 管理属性、动态设置和并发写入；完整渲染后在派生实例共享的锁下调用一次 Writer。
+// 模板、级别、Writer 和错误回调可通过 [Handler.SetTemplate]、[Handler.SetLevel]、
+// [Handler.SetWriter]、[Handler.SetErrorHandler] 在运行时调整，对已派生的实例同步生效。
 // 记录末尾缺少 LF 时自动补齐换行。NewLine 占位符可显式插入 LF，控制文本布局或 JSON 空白。
 //
-// [Setup] 安装全局默认 Logger，可通过 [WithFile] 管理轮转文件，通过 [SetLevel] 动态调级。
-// 文件配置或打开失败时保留当前 Logger，[Close] 释放 Setup 持有的文件。
+// [Setup] 配置进程的全局 Handler 并安装为默认 Logger，可通过 [WithFile] 管理轮转文件，
+// 之后可用 [SetLevel]、[SetWriter]、[SetErrorHandler]、[SetTemplate] 动态调整。
+// 此前经默认 Logger 派生的 Logger 与全局 Handler 共享设置，随之更新。
+// 文件配置或打开失败时保留当前配置，[Close] 释放 Setup 持有的文件。
 // 独立创建的 Handler 使用调用方提供的 Writer 和 Leveler；[OpenFile] 可供调用方自行管理文件生命周期。
 //
 // 编码器转义不可打印字符。属性值无法序列化、存在分组循环、超出解析限制，

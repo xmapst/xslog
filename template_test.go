@@ -261,9 +261,9 @@ func TestTemplateEncodingIsChosenByJSONValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			h := NewHandler(WithWriter(&out), WithTemplate(tc.template))
-			compiled, ok := h.layout.(*outputTemplate)
+			compiled, ok := h.currentLayout().(*outputTemplate)
 			if !ok || compiled.json != tc.json {
-				t.Fatalf("layout = %#v, want JSON mode %v", h.layout, tc.json)
+				t.Fatalf("layout = %#v, want JSON mode %v", h.currentLayout(), tc.json)
 			}
 			if err := h.Handle(context.Background(), testRecord(slog.Int("count", 2))); err != nil {
 				t.Fatal(err)

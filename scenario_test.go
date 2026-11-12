@@ -132,7 +132,7 @@ func TestTemplateJSONTailWhitespaceAndControls(t *testing.T) {
 			unsetTestEnv(t, "Line")
 			var out testWriter
 			h := NewHandler(WithWriter(&out), WithTemplate(template))
-			if !h.layout.(*outputTemplate).json {
+			if !h.currentLayout().(*outputTemplate).json {
 				t.Fatal("valid JSON whitespace selected text mode")
 			}
 			if err := h.Handle(context.Background(), testRecord(slog.Int("field", 1))); err != nil || out.writes != 1 {

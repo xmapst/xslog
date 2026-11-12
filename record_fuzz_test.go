@@ -62,7 +62,7 @@ func FuzzHandlerRecord(f *testing.F) {
 		if callbacks != 0 || out.writes != 1 || !strings.HasSuffix(out.String(), "\n") {
 			t.Fatalf("successful render: callbacks=%d writes=%d output=%q", callbacks, out.writes, out.String())
 		}
-		if h.layout.(*outputTemplate).json {
+		if h.currentLayout().(*outputTemplate).json {
 			var decoded map[string]any
 			if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
 				t.Fatalf("JSON corrupted: output=%q error=%v", out.String(), err)
