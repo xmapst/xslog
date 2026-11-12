@@ -1,6 +1,7 @@
 package xslog
 
 import (
+	"log/slog"
 	"runtime"
 	"strings"
 	"testing"
@@ -20,29 +21,36 @@ func TestSourceWithModuleVersionAndUnknownPC(t *testing.T) {
 	}
 }
 
+// timeFormat 就是 Go 布局，零值使用默认布局；不属于布局的文字原样输出，没有特殊的关键字。
 func TestTimeFormat(t *testing.T) {
-	for _, tc := range []struct{ layout, want string }{
-		{defaultTimeLayout, "2024-01-02T03:04:05.678Z"},
-		{"15:04:05", "03:04:05"}, {layoutUnix, "1704164645"},
-		{layoutUnixMilli, "1704164645678"}, {layoutUnixMicro, "1704164645678901"},
-		{layoutUnixNano, "1704164645678901234"},
+	for _, tc := range []struct {
+		name   string
+		format timeFormat
+		want   string
+	}{
+		{"零值是默认布局", "", "2024-01-02T03:04:05.678Z"},
+		{"显式的默认布局", defaultTimeLayout, "2024-01-02T03:04:05.678Z"},
+		{"时分秒", "15:04:05", "03:04:05"},
+		{"不属于布局的文字原样输出", "time=15h", "time=03h"},
 	} {
-		t.Run(tc.layout, func(t *testing.T) {
-			format := (timeFormat{}).parse(tc.layout)
-			if got := string(format.append([]byte("prefix:"), testTime())); got != "prefix:"+tc.want {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(tc.format.append([]byte("prefix:"), testTime())); got != "prefix:"+tc.want {
 				t.Fatalf("append = %q", got)
 			}
-			if got := format.text(testTime()); got != tc.want {
+			if got := tc.format.text(testTime()); got != tc.want {
 				t.Fatalf("text = %q", got)
 			}
 		})
 	}
-	f := (timeFormat{}).parse(defaultTimeLayout)
-	if got := f.text(testTime().In(time.FixedZone("UTC+8", 8*3600))); got != "2024-01-02T11:04:05.678+08:00" {
+	if got := timeFormat("").text(testTime().In(time.FixedZone("UTC+8", 8*3600))); got != "2024-01-02T11:04:05.678+08:00" {
 		t.Fatal(got)
 	}
-	if got := (timeFormat{}).parse(layoutUnix).text(time.Unix(-1, 0)); got != "-1" {
-		t.Fatal(got)
+	// 零值的编码器直接使用默认布局。
+	if got := (jsonEncoder{}).appendValue(nil, slog.TimeValue(testTime())); string(got) != `"2024-01-02T03:04:05.678Z"` {
+		t.Fatalf("零值 jsonEncoder 的时间 = %s", got)
+	}
+	if text, block, quoted := (textEncoder{}).render(slog.TimeValue(testTime())); text != "2024-01-02T03:04:05.678Z" || block || !quoted {
+		t.Fatalf("零值 textEncoder 的时间 = %q, block=%v, quoted=%v", text, block, quoted)
 	}
 }
 

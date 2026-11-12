@@ -2,14 +2,13 @@ package xslog
 
 import (
 	"log/slog"
-	"strconv"
 	"strings"
 )
 
 // templateValues 向布局提供记录元数据和业务属性。
 // 返回值仅在本次 Append 期间有效，布局不得修改或保留。
 type templateValues interface {
-	// Lookup 只查找内置的时间、级别、消息、调用位置和进程信息，名称不区分大小写。
+	// Lookup 只查找内置的时间（含各精度的 Unix 时间戳）、级别、消息、调用位置和进程信息，名称不区分大小写。
 	// 元数据缺失时返回 false。
 	Lookup(name string) (slog.Value, bool)
 
@@ -28,19 +27,26 @@ type layout interface {
 // WithTemplate 通过 [Injector] 预编译输出模板，并应用到布局。
 // 仅识别 %Name% 和 ${Name[,alignment][:format]}，其他分隔符按普通文本保留。
 //
-// 时间格式使用 Go 布局或 unix、unixMilli、unixMicro、unixNano，区分大小写。
-// 级别支持 u3、w3 缩写，文本消息的 l、lj 格式省略引号。
-// 文本模板中的 j 格式按 JSON 规则编码对应值。
+// 占位符格式分为动词和 Time 的时间布局。动词由 verb 统一解释，各占位符共用：u、w、tN 把字符串转为大写、
+// 小写、标题大小写（t 必须带宽度，单独的 t 是布尔类型动词），N 只用于 Level，按 Serilog 的缩写表
+// 取宽度 1 至 4，如 u3 为 DBG、INF、WRN、ERR；文本中 l、lj 省略字符串引号，j 按 JSON 规则编码，
+// 引号动词可以与大小写动词连写，如 lu、ljw3；环境变量可用 d、b、o、O、c、U（整数），
+// e、E、f、F、g、G（浮点数）、t（布尔值）解析为相应类型。不适用于占位符的动词被忽略。
+// 时间布局只用于 Time，使用 Go 布局，Time 上不适用的动词（如 d、f、u）被忽略，使用默认布局。
+// Unix 时间戳不是格式，而是独立的数值占位符：
+// TimeUnix、TimeUnixMilli、TimeUnixMicro、TimeUnixNano 分别输出秒、毫秒、微秒、纳秒，不受任何动词影响。
+// 完整说明见 README 的「格式动词」一章，其中分别列出通用动词、Time 和 Level 支持的格式。
 // NewLine 显式插入 LF，用于文本布局或 JSON 成员之间的空白。
 // Handler 仍自动补齐记录末尾的换行，已有换行时不重复追加。
 // 调用信息使用 Source、File、FileName、Line、Function、Package；
 // 进程信息使用 PID、Hostname、Executable，在创建 Handler 时读取一次。
-// Line 和 PID 的元数据保留数值类型，相应的环境变量回退值为字符串。
+// Line、PID 和时间戳占位符的元数据保留数值类型，相应的环境变量回退值默认为字符串。
 // JSON 中直接传入的多行字符串，包括消息、元数据及环境变量值，按行展开为字符串数组。
 //
 // 配置时以示例值展开模板，结果为合法 JSON 对象时选择 JSON 编码，否则选择文本编码。
 // 编码确定后不随记录或环境变量变化。JSON 占位符通常表示完整值，无需添加引号。
-// 缺少的记录值按原名回退系统环境变量。
+// 缺少的记录值按原名回退系统环境变量，默认是字符串；类型动词无法解析时保持字符串，
+// 在输出模板中只选择类型，标志、宽度和精度不生效。
 // 两处都缺失时，文本省略占位值，JSON 省略对应的成员或数组元素。
 // 业务属性不参与占位符查找；文本追加 key=value 字段，分组展开为点分键名，
 // 多行值写为竖线块；JSON 追加对象成员，保留分组嵌套，多行字符串按行展开为数组。
@@ -115,7 +121,7 @@ func (t *outputTemplate) Append(dst []byte, values templateValues) ([]byte, erro
 	startRecord := len(dst)
 	var missing []int
 	dst = t.injector.AppendFunc(dst, func(dst []byte, name, format string) ([]byte, bool) {
-		value, found := t.lookupValue(values, name)
+		value, found := t.lookupValue(values, name, format)
 		if !found {
 			if t.json {
 				missing = append(missing, len(dst)-startRecord)
@@ -128,40 +134,12 @@ func (t *outputTemplate) Append(dst []byte, values templateValues) ([]byte, erro
 	if t.json {
 		dst = t.appendJSONAttrs(dst, startRecord, values.Attrs())
 	} else {
-		encoder := textEncoder{time: (timeFormat{}).parse(defaultTimeLayout)}
-		dst = encoder.appendAttrs(dst, values.Attrs())
+		dst = (textEncoder{}).appendAttrs(dst, values.Attrs())
 	}
 	if err := t.validateRecord(dst[startRecord:]); err != nil {
 		return dst, err
 	}
 	return t.omitMissing(dst, startRecord, missing)
-}
-
-// formatLevel 处理 uN、wN 级别格式，宽度为 3 时使用常用缩写。
-func (t *outputTemplate) formatLevel(text string, format string) string {
-	if len(format) == 0 || (format[0] != 'u' && format[0] != 'w') {
-		return text
-	}
-	width, _ := strconv.Atoi(format[1:])
-	if width == 3 {
-		switch text {
-		case "DEBUG":
-			text = "DBG"
-		case "INFO":
-			text = "INF"
-		case "WARN":
-			text = "WRN"
-		case "ERROR":
-			text = "ERR"
-		}
-	}
-	if width > 0 && width < len(text) {
-		text = text[:width]
-	}
-	if format[0] == 'w' {
-		return strings.ToLower(text)
-	}
-	return strings.ToUpper(text)
 }
 
 // builtinName 统一内置名称的大小写，不修改环境变量查找使用的原始名称。
@@ -170,6 +148,14 @@ func (rd renderer) builtinName(name string) string {
 	switch name {
 	case "Time":
 		return "time"
+	case "TimeUnix":
+		return "timeunix"
+	case "TimeUnixMilli":
+		return "timeunixmilli"
+	case "TimeUnixMicro":
+		return "timeunixmicro"
+	case "TimeUnixNano":
+		return "timeunixnano"
 	case "Level":
 		return "level"
 	case "Source":
@@ -197,4 +183,15 @@ func (rd renderer) builtinName(name string) string {
 	default:
 		return strings.ToLower(name)
 	}
+}
+
+// numericBuiltin 报告内置占位符的值是否为数字：行号、进程 ID 和各精度的 Unix 时间戳。
+// builtin 是 builtinName 统一后的名称。它们回退到环境变量得到字符串时仍按字符串编码，
+// 不会嵌入环境变量中的 JSON；类型动词可以把环境变量解析为数值。
+func (rd renderer) numericBuiltin(builtin string) bool {
+	switch builtin {
+	case "line", "pid", "timeunix", "timeunixmilli", "timeunixmicro", "timeunixnano":
+		return true
+	}
+	return false
 }

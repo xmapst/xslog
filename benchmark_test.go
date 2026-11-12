@@ -32,10 +32,10 @@ func benchmarkCases() []benchmarkCase {
 	return []benchmarkCase{
 		{name: "TextMinimal", template: "${Message:l}"},
 		{name: "TextDefault", template: DefaultTemplate},
-		{name: "JSONMinimal", template: `{"time":${Time:unixMilli},"level":${Level},"message":${Message}}`},
+		{name: "JSONMinimal", template: `{"time":${TimeUnixMilli},"level":${Level},"message":${Message}}`},
 		{name: "JSONMetadata", template: `{"time":${Time},"level":${Level},"message":${Message},"source":${Source},"file":${File},"name":${FileName},"line":${Line},"function":${Function},"package":${Package},"pid":${PID},"host":${Hostname},"executable":${Executable}}${NewLine}`},
 		{name: "TextGrouped", template: DefaultTemplate, attrs: attrs, bound: true},
-		{name: "JSONGrouped", template: `{"time":${Time:unixMilli},"level":${Level},"message":${Message}}`, attrs: attrs, bound: true},
+		{name: "JSONGrouped", template: `{"time":${TimeUnixMilli},"level":${Level},"message":${Message}}`, attrs: attrs, bound: true},
 		{name: "TextMultiline", template: "${Message}", message: "first\nsecond", attrs: []slog.Attr{slog.String("stack", stack)}},
 		{name: "JSONMultiline", template: `{"message":${Message}}`, message: "first\nsecond", attrs: []slog.Attr{slog.String("stack", stack)}},
 		{name: "Text64KiB", template: "${Message:l}", message: large, attrs: attrs},
@@ -113,7 +113,7 @@ func BenchmarkHandlerParallel(b *testing.B) {
 func BenchmarkLogger(b *testing.B) {
 	for _, tc := range []struct{ name, template string }{
 		{"Text", DefaultTemplate},
-		{"JSON", `{"time":${Time:unixMilli},"level":${Level},"source":${Source},"message":${Message}}`},
+		{"JSON", `{"time":${TimeUnixMilli},"level":${Level},"source":${Source},"message":${Message}}`},
 		{"Filtered", DefaultTemplate},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
@@ -134,7 +134,7 @@ func BenchmarkLogger(b *testing.B) {
 func BenchmarkTemplateCompile(b *testing.B) {
 	for _, tc := range []struct{ name, template string }{
 		{"Text", DefaultTemplate},
-		{"JSON", `{"time":${Time:unixMilli},"level":${Level},"message":${Message}}${NewLine}`},
+		{"JSON", `{"time":${TimeUnixMilli},"level":${Level},"message":${Message}}${NewLine}`},
 		{"MalformedJSON", `{${Time},"Level":${Level}}`},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
@@ -157,7 +157,7 @@ func BenchmarkHandlerCreate(b *testing.B) {
 func BenchmarkInjector(b *testing.B) {
 	b.Setenv("XSLOG_BENCH_ENV", "system")
 	var injector Injector
-	injector.compile("${name,-12} ${number:04d} ${when:unixMilli} %XSLOG_BENCH_ENV%")
+	injector.compile("${name,-12} ${number:04d} ${when:15:04:05.000} %XSLOG_BENCH_ENV%")
 	values := map[string]any{"name": "api", "number": 42, "when": testTime()}
 	b.ReportAllocs()
 	for b.Loop() {

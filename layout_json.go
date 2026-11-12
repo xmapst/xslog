@@ -37,12 +37,13 @@ type jsonLayoutProbe struct{ renderer }
 
 // Lookup 返回元数据或环境变量占位符的类型示例，不读取实际记录或环境变量。
 func (p jsonLayoutProbe) Lookup(name string) (slog.Value, bool) {
-	switch p.builtinName(name) {
-	case "time":
+	builtin := p.builtinName(name)
+	switch {
+	case builtin == "time":
 		return slog.TimeValue(time.Unix(0, 0)), true
-	case "line", "pid":
+	case p.numericBuiltin(builtin):
 		return slog.IntValue(1), true
-	case "newline":
+	case builtin == "newline":
 		return slog.StringValue("\n"), true
 	default:
 		return slog.StringValue("value"), true
@@ -54,7 +55,7 @@ func (jsonLayoutProbe) Attrs() []slog.Attr { return nil }
 
 // appendJSONAttrs 将业务属性追加为对象成员，再补回模板的结束括号和尾部空白。
 func (t *outputTemplate) appendJSONAttrs(dst []byte, start int, attrs []slog.Attr) []byte {
-	encoder := jsonEncoder{time: (timeFormat{}).parse(defaultTimeLayout)}
+	encoder := jsonEncoder{}
 	body := bytes.TrimSpace(dst[start:])
 	var sep byte
 	if len(body) > 0 && body[len(body)-1] != '{' {

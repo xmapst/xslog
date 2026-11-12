@@ -170,7 +170,8 @@ func TestHandlerProcessMetadataSnapshot(t *testing.T) {
 
 func TestTemplateMissingQuotedNumericValues(t *testing.T) {
 	unsetTestEnv(t, "Line")
-	unsetTestEnv(t, "Time")
+	unsetTestEnv(t, "TimeUnix")
+	unsetTestEnv(t, "TimeUnixMilli")
 	r := testRecord()
 	r.Time = time.Time{}
 	for _, tc := range []struct{ template, want string }{
@@ -180,7 +181,8 @@ func TestTemplateMissingQuotedNumericValues(t *testing.T) {
 		{`{"${Line}":"ignored","keep":1}`, `{"keep":1}`},
 		{`{"prefix-${Line}":${Line},"keep":1}`, `{"keep":1}`},
 		{`{"literal":"null","${Line}":"${Line}","keep":"literal null"}`, `{"literal":"null","keep":"literal null"}`},
-		{`{"time":"${Time:unix}","keep":1}`, `{"keep":1}`},
+		{`{"time":"${TimeUnix}","keep":1}`, `{"keep":1}`},
+		{`{"array":[0,"${TimeUnixMilli}",2]}`, `{"array":[0,2]}`},
 	} {
 		t.Run(tc.template, func(t *testing.T) {
 			requireJSON(t, renderRecord(t, r, WithTemplate(tc.template)), tc.want)
@@ -267,4 +269,90 @@ func TestTemplateJSONMultilineStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireJSON(t, out.String(), `{"host":["first","second"],"executable":["first","second"]}`)
+}
+
+// 时间戳是独立的数值占位符，不是 Time 的格式：输出 int64 数字，文本和 JSON 中都不加引号，
+// 名称不区分大小写，任何动词和格式都被忽略（与 Line、PID 一样），只有对齐有效。
+func TestTemplateTimestampPlaceholders(t *testing.T) {
+	timestamps := []struct{ name, want string }{
+		{"TimeUnix", "1704164645"},
+		{"TimeUnixMilli", "1704164645678"},
+		{"TimeUnixMicro", "1704164645678901"},
+		{"TimeUnixNano", "1704164645678901234"},
+	}
+	for _, name := range []string{"Time", "TimeUnix", "TimeUnixMilli", "TimeUnixMicro", "TimeUnixNano"} {
+		unsetTestEnv(t, name)
+		unsetTestEnv(t, strings.ToLower(name))
+	}
+
+	for _, tc := range timestamps {
+		t.Run(tc.name, func(t *testing.T) {
+			r := testRecord(slog.Int(tc.name, -1))
+			// 三种写法、任意大小写，业务字段不影响内置占位符；文本模板中业务字段追加在末尾。
+			for _, template := range []string{"${" + tc.name + "}", "%" + tc.name + "%", "${" + strings.ToUpper(tc.name) + "}", "${" + strings.ToLower(tc.name) + "}"} {
+				if got, want := renderRecord(t, r, WithTemplate(template)), tc.want+" "+tc.name+"=-1\n"; got != want {
+					t.Fatalf("%s = %q, want %q", template, got, want)
+				}
+			}
+			requireJSON(t, renderRecord(t, r, WithTemplate(`{"at":${`+tc.name+`}}`)), `{"at":`+tc.want+`,"`+tc.name+`":-1}`)
+			requireJSON(t, renderRecord(t, r, WithTemplate(`{"at":"${`+tc.name+`}"}`)), `{"at":"`+tc.want+`","`+tc.name+`":-1}`)
+
+			// 任何动词和格式都被忽略：不加引号，不转换，Go 布局也不适用。
+			for _, format := range []string{"l", "lj", "j", "u", "w", "t3", "u3", "lu", "ju", "d", "f", "t", "2006-01-02"} {
+				placeholder := "${" + tc.name + ":" + format + "}"
+				if got := renderRecord(t, testRecord(), WithTemplate(placeholder)); got != tc.want+"\n" {
+					t.Errorf("%s = %q, want %q", placeholder, got, tc.want+"\n")
+				}
+				requireJSON(t, renderRecord(t, testRecord(), WithTemplate(`{"v":`+placeholder+`}`)), `{"v":`+tc.want+`}`)
+			}
+
+			// 对齐有效。
+			if got, want := renderRecord(t, testRecord(), WithTemplate("[${"+tc.name+",24}][${"+tc.name+",-24}]")),
+				fmt.Sprintf("[%24s][%-24s]\n", tc.want, tc.want); got != want {
+				t.Fatalf("alignment = %q, want %q", got, want)
+			}
+		})
+	}
+
+	t.Run("与时区无关", func(t *testing.T) {
+		r := testRecord()
+		r.Time = r.Time.In(time.FixedZone("UTC+8", 8*3600))
+		for _, tc := range timestamps {
+			if got := renderRecord(t, r, WithTemplate("${"+tc.name+"}")); got != tc.want+"\n" {
+				t.Errorf("%s = %q, want %q", tc.name, got, tc.want+"\n")
+			}
+		}
+	})
+
+	t.Run("早于 1970 年的时间是负数", func(t *testing.T) {
+		r := testRecord()
+		r.Time = time.Unix(-1, 0)
+		if got := renderRecord(t, r, WithTemplate("${TimeUnix}|${TimeUnixMilli}")); got != "-1|-1000\n" {
+			t.Fatalf("negative timestamps = %q", got)
+		}
+	})
+
+	// 记录没有时间时按缺失处理，与 Time 一致：文本省略，JSON 省略成员，并按占位符自己的名称回退环境变量。
+	t.Run("缺少时间", func(t *testing.T) {
+		zero := testRecord()
+		zero.Time = time.Time{}
+		if got := renderRecord(t, zero, WithTemplate("[${TimeUnix}][${TimeUnixNano}]")); got != "[][]\n" {
+			t.Fatalf("missing timestamps = %q", got)
+		}
+		requireJSON(t, renderRecord(t, zero, WithTemplate(`{"at":${TimeUnixMilli},"keep":1}`)), `{"keep":1}`)
+
+		// 回退只看占位符自己的名称：环境变量 Time 对 TimeUnix 没有影响。
+		t.Setenv("Time", "from-time")
+		if got := renderRecord(t, zero, WithTemplate("[${TimeUnix}]")); got != "[]\n" {
+			t.Fatalf("Time environment variable leaked into TimeUnix: %q", got)
+		}
+		t.Setenv("TimeUnixMilli", "1700000000000")
+		if got := renderRecord(t, zero, WithTemplate("${TimeUnixMilli}|${TimeUnixMilli:l}|${TimeUnixMilli:d}")); got != "\"1700000000000\"|1700000000000|1700000000000\n" {
+			t.Fatalf("environment fallback = %q", got)
+		}
+		// 回退值是字符串，按字符串编码，不嵌入环境变量中的 JSON；类型动词可以解析为数值。
+		requireJSON(t, renderRecord(t, zero, WithTemplate(`{"at":${TimeUnixMilli},"num":${TimeUnixMilli:d}}`)), `{"at":"1700000000000","num":1700000000000}`)
+		t.Setenv("TimeUnixMilli", `{"from":"environment"}`)
+		requireJSON(t, renderRecord(t, zero, WithTemplate(`{"at":${TimeUnixMilli}}`)), `{"at":"{\"from\":\"environment\"}"}`)
+	})
 }

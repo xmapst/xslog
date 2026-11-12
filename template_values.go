@@ -15,6 +15,14 @@ func (v *recordValues) Lookup(name string) (slog.Value, bool) {
 	switch v.builtinName(name) {
 	case "time":
 		return slog.TimeValue(v.record.Time), !v.record.Time.IsZero()
+	case "timeunix":
+		return slog.Int64Value(v.record.Time.Unix()), !v.record.Time.IsZero()
+	case "timeunixmilli":
+		return slog.Int64Value(v.record.Time.UnixMilli()), !v.record.Time.IsZero()
+	case "timeunixmicro":
+		return slog.Int64Value(v.record.Time.UnixMicro()), !v.record.Time.IsZero()
+	case "timeunixnano":
+		return slog.Int64Value(v.record.Time.UnixNano()), !v.record.Time.IsZero()
 	case "level":
 		return slog.StringValue(v.record.Level.String()), true
 	case "source":

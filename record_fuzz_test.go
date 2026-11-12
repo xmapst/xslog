@@ -18,7 +18,7 @@ func FuzzHandlerRecord(f *testing.F) {
 	}{
 		{DefaultTemplate, "hello", "key", "value", 0},
 		{`{"message":${Message},"time":${Time},"line":${Line}}`, "first\nsecond", "世界\n\"", `{"n":1}`, 3},
-		{`{"time":"${Time:unix}","line":"${Line}"}`, "\xff\xfe", "", "\x00\u202e", 2},
+		{`{"time":"${TimeUnix}","line":"${Line}"}`, "\xff\xfe", "", "\x00\u202e", 2},
 		{`${NewLine}{"data":[${Line},null,${File}],"message":${Message}}${NewLine} `, "{}", "n", "one\r\ntwo", 1},
 		{`{${Time},"Level":${Level}}`, "${Message}", "XSLOG_FUZZ_FIXED", "${Time}", 4},
 	} {

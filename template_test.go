@@ -17,10 +17,10 @@ func TestTemplateText(t *testing.T) {
 		{"percent", "%Time% [%Level%] %Message%", "2024-01-02T03:04:05.678Z [INFO] \"hello\"\n"},
 		{"case", "${tImE:15:04} ${lEvEl} ${mEsSaGe:l}", "03:04 INFO hello\n"},
 		{"time format", "${Time:2006-01-02 15:04:05.000000}", "2024-01-02 03:04:05.678901\n"},
-		{"unix", "${Time:unix}", "1704164645\n"},
-		{"milliseconds", "${Time:unixMilli}", "1704164645678\n"},
-		{"microseconds", "${Time:unixMicro}", "1704164645678901\n"},
-		{"nanoseconds", "${Time:unixNano}", "1704164645678901234\n"},
+		{"unix", "${TimeUnix}", "1704164645\n"},
+		{"milliseconds", "${TimeUnixMilli}", "1704164645678\n"},
+		{"microseconds", "${TimeUnixMicro}", "1704164645678901\n"},
+		{"nanoseconds", "${TimeUnixNano}", "1704164645678901234\n"},
 		{"right align", "[${Level,6:u3}]", "[   INF]\n"},
 		{"left align", "[${Level,-6:w3}]", "[inf   ]\n"},
 		{"literal", "{Level} {{Message}} $(Time) $Message", "{Level} {{Message}} $(Time) $Message\n"},
@@ -63,7 +63,7 @@ func TestTemplateLevelFormats(t *testing.T) {
 	}{
 		{slog.LevelDebug, "DBG/dbg/DE/DEBUG"},
 		{slog.LevelInfo, "INF/inf/IN/INFO"},
-		{slog.LevelWarn, "WRN/wrn/WA/WARN"},
+		{slog.LevelWarn, "WRN/wrn/WN/WARN"},
 		{slog.LevelError, "ERR/err/ER/ERROR"},
 		{slog.LevelInfo + 1, "INF/inf/IN/INFO+1"},
 	} {
@@ -197,14 +197,14 @@ func TestTemplateMissingJSONValuesAreOmitted(t *testing.T) {
 func TestTemplateJSONEncoding(t *testing.T) {
 	r := testRecord(slog.Time("deadline", testTime()), slog.String("stack", "first\r\n\r\nlast\r\n"))
 	r.Message = "line1\nline2\"\x1b"
-	for _, tc := range []struct{ format, want string }{
-		{"unix", "1704164645"},
-		{"unixMilli", "1704164645678"},
-		{"unixMicro", "1704164645678901"},
-		{"unixNano", "1704164645678901234"},
+	for _, tc := range []struct{ placeholder, want string }{
+		{"TimeUnix", "1704164645"},
+		{"TimeUnixMilli", "1704164645678"},
+		{"TimeUnixMicro", "1704164645678901"},
+		{"TimeUnixNano", "1704164645678901234"},
 	} {
-		t.Run(tc.format, func(t *testing.T) {
-			got := renderRecord(t, r, WithTemplate(`{"at":${Time:`+tc.format+`},"clock":${Time:15:04},"message":${Message},"severity":${Level:w3}}`))
+		t.Run(tc.placeholder, func(t *testing.T) {
+			got := renderRecord(t, r, WithTemplate(`{"at":${`+tc.placeholder+`},"clock":${Time:15:04},"message":${Message},"severity":${Level:w3}}`))
 			requireJSON(t, got, `{"at":`+tc.want+`,"clock":"03:04","message":["line1","line2\"\u001b"],"severity":"inf","deadline":"2024-01-02T03:04:05.678Z","stack":["first","","last"]}`)
 		})
 	}
@@ -249,7 +249,7 @@ func TestTemplateEncodingIsChosenByJSONValidation(t *testing.T) {
 		{"object with whitespace", " \t{\n}\r\n", true, `{"count":2}`},
 		{"metadata", `{"message":${Message}}`, true, `{"message":"hello","count":2}`},
 		{"dynamic key", `{${Level}:1}`, true, `{"INFO":1,"count":2}`},
-		{"quoted numeric value", `{"epoch":"${Time:unix}"}`, true, `{"epoch":"1704164645","count":2}`},
+		{"quoted numeric value", `{"epoch":"${TimeUnix}"}`, true, `{"epoch":"1704164645","count":2}`},
 		{"duplicate keys", `{"n":1,"n":2}`, true, `{"n":2,"count":2}`},
 		{"malformed member", `{${Time},"Level":${Level}}`, false, `{2024-01-02T03:04:05.678Z,"Level":INFO} count=2`},
 		{"text brace styles", `{Level} {{Message}}`, false, `{Level} {{Message}} count=2`},
@@ -299,10 +299,10 @@ func TestTemplateEncodingDoesNotDependOnEnvironment(t *testing.T) {
 }
 
 func TestTemplateRejectsInvalidRuntimeJSON(t *testing.T) {
-	t.Setenv("Time", "not-a-number")
+	t.Setenv("TimeUnix", "not-a-number")
 	var out testWriter
 	var observed error
-	h := NewHandler(WithWriter(&out), WithTemplate(`{"epoch":"${Time:unix}"}`), WithErrorHandler(func(err error) { observed = err }))
+	h := NewHandler(WithWriter(&out), WithTemplate(`{"epoch":"${TimeUnix}"}`), WithErrorHandler(func(err error) { observed = err }))
 	r := testRecord()
 	r.Time = time.Time{}
 	if err := h.Handle(context.Background(), r); !errors.Is(err, ErrInvalidJSONLayout) {
@@ -355,7 +355,7 @@ func TestTemplateEmptyRestoresDefault(t *testing.T) {
 func FuzzTemplateCompilation(f *testing.F) {
 	for _, template := range []string{
 		"", "text ${Message:l}", `{"message":${Message}}`, `{${Time},"Level":${Level}}`,
-		`{"epoch":"${Time:unix}"}`, `{"message":"${Message}"}`, "\u00a0{}", `{}\n`,
+		`{"epoch":"${TimeUnix}"}`, `{"at":${TimeUnixMilli}}`, `{"message":"${Message}"}`, "\u00a0{}", `{}\n`,
 		`{"file":${File},"line":${Line},"pid":${PID}}`, `{"line":"${Line}","pid":"${PID}"}`,
 		`{"${Line}":"${PID}"}`, `${FileName}:${Line} ${Function} ${Package} ${Hostname} ${Executable}`,
 		`${NewLine}{"message":${Message}}${NewLine}`, `{"line":${Line}}${NewLine}${NewLine,4}`,

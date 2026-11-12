@@ -124,8 +124,8 @@ func (h textEncoder) render(v slog.Value) (text string, block, quote bool) {
 	case slog.KindDuration:
 		return v.Duration().String(), false, true
 	case slog.KindTime:
-		// Unix 时间戳不加引号，其他时间格式按字符串输出。
-		return h.time.text(v.Time()), false, !h.time.numeric()
+		// 时间按布局格式化为字符串，文本中带引号。
+		return h.time.text(v.Time()), false, true
 	default:
 		text, quote = h.renderAny(v.Any())
 	}

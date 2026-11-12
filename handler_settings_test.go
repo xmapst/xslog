@@ -132,7 +132,7 @@ func TestHandlerSetTemplateMatchesWithTemplate(t *testing.T) {
 		"",
 		DefaultTemplate,
 		"${Time:15:04:05} [${Level:u3}] ${Message:l}",
-		`{"time":${Time:unixMilli},"message":${Message}}`,
+		`{"time":${TimeUnixMilli},"message":${Message}}`,
 		`{${Time},"Level":${Level}}`,
 		"${Message:l}${NewLine}details",
 	} {

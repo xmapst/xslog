@@ -92,9 +92,6 @@ func (h jsonEncoder) appendValue(buf []byte, v slog.Value) []byte {
 		return h.appendString(buf, v.Duration().String())
 	case slog.KindTime:
 		// slog.AnyValue 将 time.Time 归为 KindTime，在此应用时间格式。
-		if h.time.numeric() {
-			return h.time.append(buf, v.Time())
-		}
 		var scratch [64]byte
 		return h.appendString(buf, h.time.append(scratch[:0], v.Time()))
 	case slog.KindGroup:

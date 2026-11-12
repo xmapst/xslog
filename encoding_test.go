@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -138,19 +139,22 @@ func TestJSONStringsEscapeControlCharacters(t *testing.T) {
 	}
 }
 
+// 时间属性总是按布局格式化为字符串：JSON 中是字符串，文本中带引号；Unix 时间戳不是格式。
 func TestEncoderTimeFormats(t *testing.T) {
-	for _, format := range []string{defaultTimeLayout, layoutUnix, layoutUnixMilli, layoutUnixMicro, layoutUnixNano} {
-		t.Run(format, func(t *testing.T) {
-			f := (timeFormat{}).parse(format)
-			jsonEncoder := jsonEncoder{time: f}
-			got := string(jsonEncoder.appendValue(nil, slog.TimeValue(testTime())))
-			if format == defaultTimeLayout {
-				requireJSON(t, got, `"2024-01-02T03:04:05.678Z"`)
-			} else if got != f.text(testTime()) {
-				t.Fatalf("numeric JSON time = %q", got)
-			}
-			text, block, quoted := (textEncoder{time: f}).render(slog.TimeValue(testTime()))
-			if text != f.text(testTime()) || block || quoted == f.numeric() {
+	for _, tc := range []struct {
+		format timeFormat
+		want   string
+	}{
+		{"", "2024-01-02T03:04:05.678Z"},
+		{defaultTimeLayout, "2024-01-02T03:04:05.678Z"},
+		{"15:04:05", "03:04:05"},
+		{"time=15h", "time=03h"},
+	} {
+		t.Run(string(tc.format), func(t *testing.T) {
+			got := string((jsonEncoder{time: tc.format}).appendValue(nil, slog.TimeValue(testTime())))
+			requireJSON(t, got, strconv.Quote(tc.want))
+			text, block, quoted := (textEncoder{time: tc.format}).render(slog.TimeValue(testTime()))
+			if text != tc.want || block || !quoted {
 				t.Fatalf("text time = %q, block=%v, quoted=%v", text, block, quoted)
 			}
 		})

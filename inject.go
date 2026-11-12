@@ -1,12 +1,9 @@
 package xslog
 
 import (
-	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
@@ -119,23 +116,22 @@ func (i *Injector) AppendFunc(dst []byte, replace func(dst []byte, name, format 
 
 // Inject 依次从 envs 和系统环境变量查找值，nil map 可以直接使用。
 // 查找区分大小写，空值也算存在；两处均未找到时保留占位符原文。
-// 时间格式使用 Go 布局或 unix、unixMilli、unixMicro、unixNano，区分大小写；
+// 格式由 verb 统一解释：时间使用 Go 布局，不适用于时间的动词（引号动词、大小写动词和类型动词）被忽略，
+// 使用默认布局；字符串可用 u、w、tN 转换大小写（连写的引号动词被忽略），
 // 其他非空格式使用省略百分号的 fmt 格式。
+// 系统环境变量的值是文本，先按类型动词转换再格式化；无法转换时保持字符串，由 fmt 报告错误。
+// envs 中的值由调用方决定类型，不做转换。
 func (i *Injector) Inject(envs map[string]any) string {
 	return string(i.AppendFunc(nil, func(dst []byte, name, format string) ([]byte, bool) {
+		v := parseVerb(format)
 		value, found := envs[name]
 		if !found {
-			value, found = os.LookupEnv(name)
+			env, exists := v.lookupEnv(name)
+			if !exists {
+				return dst, false
+			}
+			value = env.Any()
 		}
-		if !found {
-			return dst, false
-		}
-		if format == "" {
-			return fmt.Append(dst, value), true
-		}
-		if timestamp, ok := value.(time.Time); ok {
-			return (timeFormat{}).parse(format).append(dst, timestamp), true
-		}
-		return fmt.Appendf(dst, "%"+format, value), true
+		return v.appendAny(dst, value), true
 	}))
 }

@@ -10,17 +10,6 @@ import (
 	"sync"
 )
 
-const (
-	// layoutUnix 按秒输出 Unix 时间戳。
-	layoutUnix = "unix"
-	// layoutUnixMilli 按毫秒输出 Unix 时间戳。
-	layoutUnixMilli = "unixMilli"
-	// layoutUnixMicro 按微秒输出 Unix 时间戳。
-	layoutUnixMicro = "unixMicro"
-	// layoutUnixNano 按纳秒输出 Unix 时间戳。
-	layoutUnixNano = "unixNano"
-)
-
 // Option 配置 [NewHandler] 或 [Setup]。文件轮转参数使用 [FileOption]。
 type Option func(*options)
 

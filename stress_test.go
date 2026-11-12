@@ -123,7 +123,7 @@ func TestStressConcurrentRecords(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			template := "[${Level:u3}] ${Message:l}"
 			if mode == "json" {
-				template = `{"time":${Time:unixNano},"level":${Level},"message":${Message},"file":${FileName},"line":${Line},"pid":${PID}}${NewLine}`
+				template = `{"time":${TimeUnixNano},"level":${Level},"message":${Message},"file":${FileName},"line":${Line},"pid":${PID}}${NewLine}`
 			}
 			// 同一编译选项同时用于独立 Handler 与派生 Handler。
 			option := WithTemplate(template)

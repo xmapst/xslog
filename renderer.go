@@ -34,72 +34,26 @@ type sourceInfo struct {
 	pkg      string
 }
 
-// timeKind 是时间的渲染方式。
-type timeKind uint8
+// timeFormat 是时间使用的 Go 布局，零值表示默认布局 [defaultTimeLayout]，所以零值的编码器可以直接使用。
+// 时间总是按布局格式化为字符串；Unix 时间戳不是时间的格式，由 TimeUnix 等独立的占位符提供数值。
+type timeFormat string
 
-const (
-	// timeText 使用 Go 时间布局格式化时间。
-	timeText timeKind = iota
-	// timeUnixSec 按秒输出 Unix 时间戳。
-	timeUnixSec
-	// timeUnixMilli 按毫秒输出 Unix 时间戳。
-	timeUnixMilli
-	// timeUnixMicro 按微秒输出 Unix 时间戳。
-	timeUnixMicro
-	// timeUnixNano 按纳秒输出 Unix 时间戳。
-	timeUnixNano
-)
-
-// timeFormat 保存占位符选定的 Go 时间布局或 Unix 时间戳类型。
-type timeFormat struct {
-	// layout 只在 kind 为 timeText 时有效。
-	layout string
-	kind   timeKind
-}
-
-// parse 解析 Go 时间布局或 Unix 时间戳格式，返回新的格式值。
-func (f timeFormat) parse(layout string) timeFormat {
-	f.layout = ""
-	switch layout {
-	case layoutUnix:
-		f.kind = timeUnixSec
-	case layoutUnixMilli:
-		f.kind = timeUnixMilli
-	case layoutUnixMicro:
-		f.kind = timeUnixMicro
-	case layoutUnixNano:
-		f.kind = timeUnixNano
-	default:
-		f.layout, f.kind = layout, timeText
+// layout 返回实际使用的 Go 布局。
+func (f timeFormat) layout() string {
+	if f == "" {
+		return defaultTimeLayout
 	}
-	return f
+	return string(f)
 }
 
-// numeric 报告时间是否输出为不带引号的 Unix 时间戳。
-func (f timeFormat) numeric() bool { return f.kind != timeText }
-
-// append 将按当前格式编码的时间追加到 buf。
+// append 将按布局格式化的时间追加到 buf。
 func (f timeFormat) append(buf []byte, t time.Time) []byte {
-	switch f.kind {
-	case timeUnixSec:
-		return strconv.AppendInt(buf, t.Unix(), 10)
-	case timeUnixMilli:
-		return strconv.AppendInt(buf, t.UnixMilli(), 10)
-	case timeUnixMicro:
-		return strconv.AppendInt(buf, t.UnixMicro(), 10)
-	case timeUnixNano:
-		return strconv.AppendInt(buf, t.UnixNano(), 10)
-	default:
-		return t.AppendFormat(buf, f.layout)
-	}
+	return t.AppendFormat(buf, f.layout())
 }
 
-// text 返回按当前格式编码的时间文本。
+// text 返回按布局格式化的时间文本。
 func (f timeFormat) text(t time.Time) string {
-	if f.kind == timeText {
-		return t.Format(f.layout)
-	}
-	return string(f.append(nil, t))
+	return t.Format(f.layout())
 }
 
 // source 返回缓存的调用信息；PC 为 0 时返回空值，各字段独立判断是否存在。

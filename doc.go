@@ -13,17 +13,23 @@
 // 选定的编码不随记录或环境变量变化。JSON 占位符表示完整值，通常无需额外加引号：
 //
 //	xslog.NewHandler(xslog.WithTemplate(
-//	    `{"time":${Time:unixMilli},"message":${Message}}`,
+//	    `{"time":${TimeUnixMilli},"message":${Message}}`,
 //	))
 //
-// 时间格式写在对应占位符中，可用 Go 时间布局或区分大小写的 unix、unixMilli、unixMicro、unixNano。
+// 占位符格式分为各占位符共用的动词和 Time 专用的时间布局：u、w、tN 把字符串转为大写、小写、标题大小写，
+// 对 Level 还按宽度 N 取缩写，如 u3 为 INF；文本中的字符串用 l、lj 省略引号，j 按 JSON 规则编码，
+// 引号动词可与大小写动词连写，如 lu；时间布局只用于 Time，使用 Go 时间布局，
+// Time 忽略不适用于时间的动词，如 d、f、u，使用默认布局，不会原样输出。
+// Unix 时间戳是独立的数值占位符 TimeUnix、TimeUnixMilli、TimeUnixMicro、TimeUnixNano，不受任何动词影响。
 // 调用信息通过 Source、File、FileName、Line、Function、Package 读取，并按程序计数器缓存。
 // File 保留运行时文件路径，Source 使用缩短的目录/文件名:行号。
 // PID、Hostname、Executable 在创建 Handler 时读取，派生 Handler 复用同一份快照。
-// Line 和 PID 的元数据在 JSON 中为数字，环境变量回退值按字符串处理。
+// Line、PID 和时间戳占位符的元数据在 JSON 中为数字，环境变量回退值默认按字符串处理。
 //
 // 内置占位符名称不区分大小写；元数据缺失时，按占位符原名回退系统环境变量。
 // 空环境变量算作存在，两处均缺失时，文本省略占位值，JSON 省略对应成员或数组元素。
+// 环境变量默认是字符串，格式中的类型动词可将其解析为数字或布尔值：d、b、o、O、c、U 为整数，
+// e、E、f、F、g、G 为浮点数，t 为布尔值，无法解析时保持字符串，例如 ${PORT:d}。
 // 占位符不查找业务属性，业务属性通过 Logger 的 With、WithGroup 及日志调用参数传入。
 // 文本字段使用 key=value，普通单行字符串带引号，分组展开为点分键名，多行字段写为对齐的竖线块。
 // JSON 字段保留对象嵌套；直接传入的字符串去掉末尾 CR/LF 后仍有多行内容时，按行展开为字符串数组。
